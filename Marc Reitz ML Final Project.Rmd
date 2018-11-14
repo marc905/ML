@@ -1,0 +1,265 @@
+---
+title: "Machine Learning Course Project"
+author: "Marc Reitz"
+date: "November 12, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Citation:   Data for this project was sourced from:  http://groupware.les.inf.puc-rio.br/har
+
+Objective:  The goal of your project is to predict the manner in which they did the exercise. 
+            This is the "classe" variable in the training set. You may use any of the other 
+            variables to predict with. You should create a report describing how you built 
+            your model, how you used cross validation, what you think the expected out of 
+            sample error is, and why you made the choices you did. You will also use your 
+            prediction model to predict 20 different test cases.
+
+Submission: Apply your machine learning algorithm to the 20 test cases available in the test 
+            data above and submit your predictions in appropriate format to the Course Project
+            Prediction Quiz for automated grading.
+
+Summary:    For this analysis, the base data was subsetted to remove a large number of factors that predominantly
+            recorded a value of 0 or NA.  With what remained, a validation data set was carved out and three models
+            were applied:  a random forest model, a generalized boosted regression model and a combination of the two.
+            The parallel processing methodology suggested by the instructor in the course forums was applied, which
+            significantly reduced the time required to process the models.  From these model results, the random forest 
+            model (99.24% accuracy) performed better than the GBM model (96.21%).  The combo model did not appear to add any 
+            additional accuracy over the RF model, so the RF model on its own will be used for the final predictions.
+
+## Preparation
+
+The training and test datasets are downloaded (if they have not been already) and separately read in to R.  A validation subset is carved out of the training subset and used to assist with model selection.
+
+
+```{r preparation, echo=TRUE}
+if(!file.exists("./pml-training.csv")) 
+{
+  file_url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(file_url_train, destfile = "./pml-training.csv")
+
+  file_url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(file_url_test, destfile = "./pml-testing.csv")
+  
+}
+
+library(caret, warn.conflicts = FALSE, quietly = TRUE)
+
+training_file <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+testing_file  <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!","") )
+
+set.seed(10101)
+
+train_subset  <- createDataPartition(y= training_file$classe, p=.7, list = FALSE)
+training      <- training_file[ train_subset,]
+validation    <- training_file[-train_subset,]
+testing       <- testing_file
+
+
+```
+
+The testing data set was then explored and the columns of the data set are then subsetted to remove:
+* Predominantly 0 or NA values.
+* Timestamps, user names, X
+* new_window, num_window columns
+
+```{r}
+summary(training$classe)
+```
+
+
+```{r, echo= FALSE}
+
+  col_name_vector <- c( 
+  "kurtosis_roll_belt", 
+  "kurtosis_yaw_belt", 
+  "skewness_roll_belt", 
+  "skewness_roll_belt.1",  
+  "skewness_yaw_belt", 
+  "max_roll_belt", 
+  "max_picth_belt", 
+  "max_yaw_belt", 
+  "min_roll_belt",      
+  "min_pitch_belt",    
+  "min_yaw_belt",    
+  "amplitude_roll_belt",  
+  "amplitude_pitch_belt",  
+  "amplitude_yaw_belt",  
+  "var_total_accel_belt",  
+  "avg_roll_belt",     
+  "stddev_roll_belt",  
+  "var_roll_belt",  
+  "avg_pitch_belt",     
+  "stddev_pitch_belt",  
+  "var_pitch_belt",     
+  "avg_yaw_belt",       
+  "stddev_yaw_belt",     
+  "var_yaw_belt", 
+  "kurtosis_picth_belt",
+  "var_accel_arm", 
+  "avg_roll_arm",      
+  "stddev_roll_arm",     
+  "var_roll_arm",        
+  "avg_pitch_arm",      
+  "stddev_pitch_arm",  
+  "var_pitch_arm",        
+  "avg_yaw_arm",        
+  "stddev_yaw_arm",      
+  "var_yaw_arm",  
+  "kurtosis_roll_arm",  
+  "kurtosis_picth_arm", 
+  "kurtosis_yaw_arm",  
+  "skewness_roll_arm",  
+  "skewness_pitch_arm",  
+  "skewness_yaw_arm",   
+  "max_roll_arm",      
+  "max_picth_arm",        
+  "max_yaw_arm",      
+  "min_roll_arm",     
+  "min_pitch_arm",       
+  "min_yaw_arm",  
+  "amplitude_roll_arm",  
+  "amplitude_pitch_arm",  
+  "amplitude_yaw_arm", 
+  "kurtosis_roll_dumbbell",  
+  "kurtosis_picth_dumbbell",  
+  "kurtosis_yaw_dumbbell", 
+  "skewness_roll_dumbbell",  
+  "skewness_pitch_dumbbell",  
+  "skewness_yaw_dumbbell",  
+  "max_roll_dumbbell",  
+  "max_picth_dumbbell",  
+  "max_yaw_dumbbell",  
+  "min_roll_dumbbell",  
+  "min_pitch_dumbbell",  
+  "min_yaw_dumbbell", 
+  "amplitude_roll_dumbbell",  
+  "amplitude_pitch_dumbbell", 
+  "amplitude_yaw_dumbbell",  
+  "var_accel_dumbbell",  
+  "avg_roll_dumbbell", 
+  "stddev_roll_dumbbell",  
+  "var_roll_dumbbell", 
+  "avg_pitch_dumbbell", 
+  "stddev_pitch_dumbbell", 
+  "var_pitch_dumbbell", 
+  "avg_yaw_dumbbell", 
+  "stddev_yaw_dumbbell",
+  "var_yaw_dumbbell",
+  "kurtosis_roll_forearm",
+  "kurtosis_picth_forearm",
+  "kurtosis_yaw_forearm", 
+  "skewness_roll_forearm",  
+  "skewness_pitch_forearm",  
+  "skewness_yaw_forearm",  
+  "max_roll_forearm",  
+  "max_picth_forearm",  
+  "max_yaw_forearm",   
+  "min_roll_forearm",   
+  "min_pitch_forearm",  
+  "min_yaw_forearm", 
+  "amplitude_roll_forearm", 
+  "amplitude_pitch_forearm",  
+  "amplitude_yaw_forearm", 
+  "var_accel_forearm",  
+  "avg_roll_forearm",    
+  "stddev_roll_forearm",  
+  "var_roll_forearm",    
+  "avg_pitch_forearm",  
+  "stddev_pitch_forearm", 
+  "var_pitch_forearm",   
+  "avg_yaw_forearm",    
+  "stddev_yaw_forearm",  
+  "var_yaw_forearm", 
+  "X",
+  "user_name",
+  "raw_timestamp_part_1",
+  "raw_timestamp_part_2",
+  "cvtd_timestamp",
+  "new_window",
+  "num_window"
+    )
+
+```
+```{r, echo=TRUE}
+
+training    <- training  [, -which( names(training)   %in% col_name_vector )]
+validation  <- validation[, -which( names(validation) %in% col_name_vector )]
+testing     <- testing   [, -which( names(testing)    %in% col_name_vector )]
+
+
+```
+
+## Processing the data
+
+Parallel Processing
+Step 1:  Configure Parallel Processing
+```{r }
+library(caret, warn.conflicts = FALSE, quietly = TRUE)
+library(parallel, warn.conflicts = FALSE, quietly = TRUE)
+library(doParallel, warn.conflicts = FALSE, quietly = TRUE)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+```
+
+Step 2: Configure trainControl Object
+Here, the trainControl object was configured using 5 k-folds for cross-validation.
+
+```{r trainControl}
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
+```
+
+Step 3: Develop Model
+
+```{r model, echo = TRUE}
+modFit   <- train( classe~., data = training, method = "rf", trControl = fitControl)
+modFit2  <- train( classe~., data = training, method = "gbm", verbose = FALSE)
+
+pred_1 <- predict(modFit, validation)
+pred_2 <- predict(modFit2, validation)
+
+pred_combo <- data.frame(pred_1, pred_2, classe = validation$classe)
+combo_Model_fit <- train(classe~., method = "gbm", data = pred_combo, verbose = FALSE)
+combPred <- predict(combo_Model_fit, pred_combo)
+
+
+
+```
+
+Step 4:  Review results against validation set
+
+```{r Model_Validation_Results}
+
+# Random Forest Model
+confusionMatrix(validation$classe, pred_1)
+# GBM Model
+confusionMatrix(validation$classe, pred_2)
+# Combo Model
+confusionMatrix(validation$classe, combPred)
+
+```
+
+Step 5:  Apply model 1 to test set
+```{r Model_Test_Set_Results}
+
+pred_test <- predict(modFit, testing)
+pred_test
+
+
+stopCluster(cluster)
+registerDoSEQ()
+
+```
+
+
+
+
+
+
+
